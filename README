@@ -1,14 +1,13 @@
 # NeoCOBOL
 
-NeoCOBOL é uma linguagem de programação inspirada no COBOL,
-projetada para manter sua simplicidade e foco em aplicações
-de negócios, mas com uma sintaxe moderna e recursos de
-segurança.
 
-## Estado atual
+NeoCOBOL 0.4.0
 
-Versão: 0.3.0
-Estado: Experimental
+Uma linguagem de programação simples, legível e rigorosa,
+inspirada na filosofia de simplicidade do COBOL e construída
+em Rust.
+
+Estado: desenvolvimento
 
 ## Atualmente funciona
 
@@ -39,6 +38,12 @@ saldo = saldo + deposito
 display "Saldo: {saldo}"
 
 ## Compilação do projeto
+
+cargo build
+
+## Execução
+
+cargo run -- programa.neolação do projeto
 
 cargo build
 

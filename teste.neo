@@ -1,0 +1,12 @@
+decimal saldo = 1500.50
+decimal deposito = 500.00
+
+saldo = saldo + deposito
+
+display "Saldo atual: {saldo}"
+
+if saldo > 1000
+    display "Saldo aprovado."
+else
+    display "Saldo baixo."
+end

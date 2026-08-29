@@ -1,0 +1,47 @@
+# NeoCOBOL
+
+NeoCOBOL é uma linguagem de programação inspirada no COBOL,
+projetada para manter sua simplicidade e foco em aplicações
+de negócios, mas com uma sintaxe moderna e recursos de
+segurança.
+
+## Estado atual
+
+Versão: 0.3.0
+Estado: Experimental
+
+## Atualmente funciona
+
+- Lexer
+- Parser
+- AST
+- Tipagem forte
+- decimal
+- string
+- boolean
+- variáveis
+- operações matemáticas
+- comparações
+- if / else
+- while
+- display
+- interpolação de strings
+- tratamento de erros
+- execução de arquivos `.neo`
+
+## Exemplo
+
+decimal saldo = 1500.50
+decimal deposito = 500.00
+
+saldo = saldo + deposito
+
+display "Saldo: {saldo}"
+
+## Compilação do projeto
+
+cargo build
+
+## Execução
+
+cargo run -- programa.neo

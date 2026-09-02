@@ -1,52 +1,90 @@
-# NeoCOBOL
+NeoCOBOL
 
+Uma linguagem de programação simples, leve e legível.
 
-NeoCOBOL 0.4.0
+Versão
 
-Uma linguagem de programação simples, legível e rigorosa,
-inspirada na filosofia de simplicidade do COBOL e construída
-em Rust.
+0.5.0
 
-Estado: desenvolvimento
+O que é?
 
-## Atualmente funciona
+NeoCOBOL é uma linguagem experimental criada para ser:
 
-- Lexer
-- Parser
-- AST
-- Tipagem forte
-- decimal
-- string
-- boolean
-- variáveis
-- operações matemáticas
-- comparações
-- if / else
-- while
-- display
-- interpolação de strings
-- tratamento de erros
-- execução de arquivos `.neo`
+- Simples
+- Leve
+- Legível
+- Fortemente tipada
+- Segura
 
-## Exemplo
+Atualmente, a NeoCOBOL funciona através de um interpretador escrito em Rust.
 
-decimal saldo = 1500.50
-decimal deposito = 500.00
+Exemplo
 
-saldo = saldo + deposito
+decimal numero = 10
 
-display "Saldo: {saldo}"
+numero += 5
 
-## Compilação do projeto
+if numero > 10
+    display "Numero: {numero}"
+end
 
-cargo build
+Recursos
 
-## Execução
+- "decimal"
+- "string"
+- "boolean"
+- "if / else"
+- "while"
+- Funções
+- "return"
+- Operações matemáticas
+- Comparações
+- "and / or / not"
+- Atribuições "+= -= *= /= %="
+- Comentários com "#"
+- Interpolação de texto
+- Erros próprios da linguagem
 
-cargo run -- programa.neolação do projeto
+Como executar
 
-cargo build
-
-## Execução
+É necessário ter Rust e Cargo instalados.
 
 cargo run -- programa.neo
+
+Exemplo de função
+
+func dobro(numero)
+    return numero * 2
+end
+
+display dobro(10)
+
+Resultado:
+
+20
+
+Estrutura
+
+.neo
+ ↓
+Lexer
+ ↓
+Parser
+ ↓
+AST
+ ↓
+Análise semântica
+ ↓
+Runtime
+
+Estado
+
+Experimental.
+
+A linguagem ainda está em desenvolvimento.
+
+Próximos objetivos incluem melhorar o sistema de tipos, análise semântica, entrada de dados, biblioteca padrão e, futuramente, compilação nativa.
+
+Licença
+
+Veja o arquivo "LICENSE".

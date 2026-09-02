@@ -5,27 +5,27 @@ use std::fs;
 use std::str::FromStr;
 
 // ================================================================
-// NeoCOBOL 0.4.0
+// NeoCOBOL 0.5.0
 //
-// Linguagem de programação inspirada na simplicidade do COBOL,
-// mas com sintaxe moderna.
+// Linguagem simples, legível e rigorosa.
 //
 // Pipeline:
 //
-// código .neo
-//     ↓
+// .neo
+//   ↓
 // Lexer
-//     ↓
+//   ↓
 // Tokens
-//     ↓
+//   ↓
 // Parser
-//     ↓
+//   ↓
 // AST
-//     ↓
+//   ↓
+// Análise semântica
+//   ↓
 // Runtime
 //
-// Nesta versão ainda usamos interpretação.
-// A AST será a base para o futuro compilador nativo.
+// A arquitetura continua preparada para o futuro compilador.
 // ================================================================
 
 
@@ -108,6 +108,11 @@ enum NeoErro {
         recebido: String,
     },
 
+    Semantico {
+        linha: usize,
+        mensagem: String,
+    },
+
     Runtime {
         linha: usize,
         mensagem: String,
@@ -158,16 +163,36 @@ impl std::fmt::Display for NeoErro {
                 )
             }
 
-            NeoErro::Runtime {
+            NeoErro::Semantico {
                 linha,
                 mensagem,
             } => {
                 write!(
                     f,
-                    "NEO3001 - Erro de execução na linha {}: {}",
+                    "NEO2002 - Erro semântico na linha {}: {}",
                     linha,
                     mensagem
                 )
+            }
+
+            NeoErro::Runtime {
+                linha,
+                mensagem,
+            } => {
+                if *linha == 0 {
+                    write!(
+                        f,
+                        "NEO3001 - Erro de execução: {}",
+                        mensagem
+                    )
+                } else {
+                    write!(
+                        f,
+                        "NEO3001 - Erro de execução na linha {}: {}",
+                        linha,
+                        mensagem
+                    )
+                }
             }
         }
     }
@@ -216,6 +241,12 @@ enum TokenKind {
     MaiorIgual,
     MenorIgual,
 
+    MaisIgual,
+    MenosIgual,
+    MultiplicaIgual,
+    DivideIgual,
+    ModuloIgual,
+
     AbrePar,
     FechaPar,
     Virgula,
@@ -248,12 +279,18 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 continue;
             }
 
+            // ----------------------------------------------------
             // Comentário
+            // ----------------------------------------------------
+
             if c == '#' {
                 break;
             }
 
+            // ----------------------------------------------------
             // String
+            // ----------------------------------------------------
+
             if c == '"' {
                 chars.next();
 
@@ -272,10 +309,14 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 }
 
                 if !fechou {
-                    return Err(NeoErro::Lexico {
-                        linha: numero_linha,
-                        mensagem: "String não terminada.".into(),
-                    });
+                    return Err(
+                        NeoErro::Lexico {
+                            linha: numero_linha,
+                            mensagem:
+                                "String não terminada."
+                                    .into(),
+                        }
+                    );
                 }
 
                 tokens.push(Token {
@@ -287,7 +328,10 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 continue;
             }
 
+            // ----------------------------------------------------
             // Número
+            // ----------------------------------------------------
+
             if c.is_ascii_digit() {
                 let mut numero = String::new();
                 let mut pontos = 0;
@@ -300,12 +344,14 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                         pontos += 1;
 
                         if pontos > 1 {
-                            return Err(NeoErro::Lexico {
-                                linha: numero_linha,
-                                mensagem:
-                                    "Número possui mais de um ponto decimal."
-                                        .into(),
-                            });
+                            return Err(
+                                NeoErro::Lexico {
+                                    linha: numero_linha,
+                                    mensagem:
+                                        "Número possui mais de um ponto decimal."
+                                            .into(),
+                                }
+                            );
                         }
 
                         numero.push(ch);
@@ -324,7 +370,10 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 continue;
             }
 
+            // ----------------------------------------------------
             // Identificadores
+            // ----------------------------------------------------
+
             if c.is_alphabetic() || c == '_' {
                 let mut palavra = String::new();
 
@@ -340,7 +389,10 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 let kind = match palavra.as_str() {
                     "decimal" => TokenKind::Decimal,
                     "string" => TokenKind::String,
-                    "boolean" => TokenKind::Boolean,
+
+                    "boolean"
+                    | "true"
+                    | "false" => TokenKind::Boolean,
 
                     "display" => TokenKind::Display,
                     "if" => TokenKind::If,
@@ -355,8 +407,6 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                     "or" => TokenKind::Or,
                     "not" => TokenKind::Not,
 
-                    "true" | "false" => TokenKind::Boolean,
-
                     _ => TokenKind::Identificador,
                 };
 
@@ -369,85 +419,109 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                 continue;
             }
 
+            // ----------------------------------------------------
+            // Operadores
+            // ----------------------------------------------------
+
             match c {
                 '+' => {
                     chars.next();
 
-                    tokens.push(Token {
-                        kind: TokenKind::Mais,
-                        texto: "+".into(),
-                        linha: numero_linha,
-                    });
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
+
+                        tokens.push(Token {
+                            kind: TokenKind::MaisIgual,
+                            texto: "+=".into(),
+                            linha: numero_linha,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Mais,
+                            texto: "+".into(),
+                            linha: numero_linha,
+                        });
+                    }
                 }
 
                 '-' => {
                     chars.next();
 
-                    tokens.push(Token {
-                        kind: TokenKind::Menos,
-                        texto: "-".into(),
-                        linha: numero_linha,
-                    });
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
+
+                        tokens.push(Token {
+                            kind: TokenKind::MenosIgual,
+                            texto: "-=".into(),
+                            linha: numero_linha,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Menos,
+                            texto: "-".into(),
+                            linha: numero_linha,
+                        });
+                    }
                 }
 
                 '*' => {
                     chars.next();
 
-                    tokens.push(Token {
-                        kind: TokenKind::Multiplica,
-                        texto: "*".into(),
-                        linha: numero_linha,
-                    });
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
+
+                        tokens.push(Token {
+                            kind: TokenKind::MultiplicaIgual,
+                            texto: "*=".into(),
+                            linha: numero_linha,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Multiplica,
+                            texto: "*".into(),
+                            linha: numero_linha,
+                        });
+                    }
                 }
 
                 '/' => {
                     chars.next();
 
-                    tokens.push(Token {
-                        kind: TokenKind::Divide,
-                        texto: "/".into(),
-                        linha: numero_linha,
-                    });
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
+
+                        tokens.push(Token {
+                            kind: TokenKind::DivideIgual,
+                            texto: "/=".into(),
+                            linha: numero_linha,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Divide,
+                            texto: "/".into(),
+                            linha: numero_linha,
+                        });
+                    }
                 }
 
                 '%' => {
                     chars.next();
 
-                    tokens.push(Token {
-                        kind: TokenKind::Modulo,
-                        texto: "%".into(),
-                        linha: numero_linha,
-                    });
-                }
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
 
-                '(' => {
-                    chars.next();
-
-                    tokens.push(Token {
-                        kind: TokenKind::AbrePar,
-                        texto: "(".into(),
-                        linha: numero_linha,
-                    });
-                }
-
-                ')' => {
-                    chars.next();
-
-                    tokens.push(Token {
-                        kind: TokenKind::FechaPar,
-                        texto: ")".into(),
-                        linha: numero_linha,
-                    });
-                }
-
-                ',' => {
-                    chars.next();
-
-                    tokens.push(Token {
-                        kind: TokenKind::Virgula,
-                        texto: ",".into(),
-                        linha: numero_linha,
-                    });
+                        tokens.push(Token {
+                            kind: TokenKind::ModuloIgual,
+                            texto: "%=".into(),
+                            linha: numero_linha,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Modulo,
+                            texto: "%".into(),
+                            linha: numero_linha,
+                        });
+                    }
                 }
 
                 '=' => {
@@ -482,12 +556,14 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                             linha: numero_linha,
                         });
                     } else {
-                        return Err(NeoErro::Lexico {
-                            linha: numero_linha,
-                            mensagem:
-                                "Use != para diferença."
-                                    .into(),
-                        });
+                        return Err(
+                            NeoErro::Lexico {
+                                linha: numero_linha,
+                                mensagem:
+                                    "Use != para diferença."
+                                        .into(),
+                            }
+                        );
                     }
                 }
 
@@ -531,14 +607,46 @@ fn lex(codigo: &str) -> Result<Vec<Token>, NeoErro> {
                     }
                 }
 
-                _ => {
-                    return Err(NeoErro::Lexico {
+                '(' => {
+                    chars.next();
+
+                    tokens.push(Token {
+                        kind: TokenKind::AbrePar,
+                        texto: "(".into(),
                         linha: numero_linha,
-                        mensagem: format!(
-                            "Caractere desconhecido '{}'.",
-                            c
-                        ),
                     });
+                }
+
+                ')' => {
+                    chars.next();
+
+                    tokens.push(Token {
+                        kind: TokenKind::FechaPar,
+                        texto: ")".into(),
+                        linha: numero_linha,
+                    });
+                }
+
+                ',' => {
+                    chars.next();
+
+                    tokens.push(Token {
+                        kind: TokenKind::Virgula,
+                        texto: ",".into(),
+                        linha: numero_linha,
+                    });
+                }
+
+                _ => {
+                    return Err(
+                        NeoErro::Lexico {
+                            linha: numero_linha,
+                            mensagem: format!(
+                                "Caractere desconhecido '{}'.",
+                                c
+                            ),
+                        }
+                    );
                 }
             }
         }
@@ -566,29 +674,94 @@ enum Expressao {
 
     Variavel(String),
 
-    Soma(Box<Expressao>, Box<Expressao>),
-    Subtracao(Box<Expressao>, Box<Expressao>),
-    Multiplicacao(Box<Expressao>, Box<Expressao>),
-    Divisao(Box<Expressao>, Box<Expressao>),
-    Modulo(Box<Expressao>, Box<Expressao>),
+    Soma(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
 
-    Negativo(Box<Expressao>),
+    Subtracao(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
 
-    Maior(Box<Expressao>, Box<Expressao>),
-    Menor(Box<Expressao>, Box<Expressao>),
-    MaiorIgual(Box<Expressao>, Box<Expressao>),
-    MenorIgual(Box<Expressao>, Box<Expressao>),
-    Igual(Box<Expressao>, Box<Expressao>),
-    Diferente(Box<Expressao>, Box<Expressao>),
+    Multiplicacao(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
 
-    And(Box<Expressao>, Box<Expressao>),
-    Or(Box<Expressao>, Box<Expressao>),
-    Not(Box<Expressao>),
+    Divisao(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Modulo(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Negativo(
+        Box<Expressao>,
+    ),
+
+    Maior(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Menor(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    MaiorIgual(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    MenorIgual(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Igual(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Diferente(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    And(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Or(
+        Box<Expressao>,
+        Box<Expressao>,
+    ),
+
+    Not(
+        Box<Expressao>,
+    ),
 
     Chamada {
         nome: String,
         argumentos: Vec<Expressao>,
     },
+}
+
+
+#[derive(Debug, Clone)]
+enum OperadorAtribuicao {
+    Igual,
+    Mais,
+    Menos,
+    Multiplica,
+    Divide,
+    Modulo,
 }
 
 
@@ -603,6 +776,7 @@ enum Instrucao {
 
     Atribuir {
         nome: String,
+        operador: OperadorAtribuicao,
         valor: Expressao,
         linha: usize,
     },
@@ -676,14 +850,16 @@ impl Parser {
             self.avancar();
             Ok(token)
         } else {
-            Err(NeoErro::Sintaxe {
-                linha: token.linha,
-                mensagem: format!(
-                    "Esperado {:?}, encontrado '{}'.",
-                    esperado,
-                    token.texto
-                ),
-            })
+            Err(
+                NeoErro::Sintaxe {
+                    linha: token.linha,
+                    mensagem: format!(
+                        "Esperado {:?}, encontrado '{}'.",
+                        esperado,
+                        token.texto
+                    ),
+                }
+            )
         }
     }
 
@@ -693,7 +869,9 @@ impl Parser {
         let mut resultado = Vec::new();
 
         while self.atual().kind != TokenKind::Fim {
-            resultado.push(self.instrucao()?);
+            resultado.push(
+                self.instrucao()?
+            );
         }
 
         Ok(resultado)
@@ -709,28 +887,37 @@ impl Parser {
                 self.declaracao()
             }
 
-            TokenKind::Display => self.display(),
+            TokenKind::Display =>
+                self.display(),
 
-            TokenKind::If => self.if_instrucao(),
+            TokenKind::If =>
+                self.if_instrucao(),
 
-            TokenKind::While => self.while_instrucao(),
+            TokenKind::While =>
+                self.while_instrucao(),
 
-            TokenKind::Func => self.funcao(),
+            TokenKind::Func =>
+                self.funcao(),
 
-            TokenKind::Return => self.retorno(),
+            TokenKind::Return =>
+                self.retorno(),
 
-            TokenKind::Identificador => self.atribuicao(),
+            TokenKind::Identificador =>
+                self.atribuicao(),
 
             _ => {
-                let token = self.atual().clone();
+                let token =
+                    self.atual().clone();
 
-                Err(NeoErro::Sintaxe {
-                    linha: token.linha,
-                    mensagem: format!(
-                        "Instrução inesperada '{}'.",
-                        token.texto
-                    ),
-                })
+                Err(
+                    NeoErro::Sintaxe {
+                        linha: token.linha,
+                        mensagem: format!(
+                            "Instrução inesperada '{}'.",
+                            token.texto
+                        ),
+                    }
+                )
             }
         }
     }
@@ -738,155 +925,260 @@ impl Parser {
     fn declaracao(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let tipo = match self.atual().kind {
-            TokenKind::Decimal => Tipo::Decimal,
-            TokenKind::String => Tipo::String,
-            TokenKind::Boolean => Tipo::Boolean,
-            _ => unreachable!(),
-        };
+        let tipo =
+            match self.atual().kind {
+                TokenKind::Decimal =>
+                    Tipo::Decimal,
 
-        let linha = self.atual().linha;
+                TokenKind::String =>
+                    Tipo::String,
+
+                TokenKind::Boolean =>
+                    Tipo::Boolean,
+
+                _ => unreachable!(),
+            };
+
+        let linha =
+            self.atual().linha;
 
         self.avancar();
 
-        let nome = self.consumir(
-            TokenKind::Identificador
+        let nome =
+            self.consumir(
+                TokenKind::Identificador
+            )?;
+
+        self.consumir(
+            TokenKind::Igual
         )?;
 
-        self.consumir(TokenKind::Igual)?;
+        let valor =
+            self.expressao()?;
 
-        let valor = self.expressao()?;
-
-        Ok(Instrucao::Declarar {
-            tipo,
-            nome: nome.texto,
-            valor,
-            linha,
-        })
+        Ok(
+            Instrucao::Declarar {
+                tipo,
+                nome: nome.texto,
+                valor,
+                linha,
+            }
+        )
     }
 
     fn atribuicao(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
         let nome =
-            self.consumir(TokenKind::Identificador)?;
+            self.consumir(
+                TokenKind::Identificador
+            )?;
 
-        let linha = nome.linha;
+        let linha =
+            nome.linha;
 
-        self.consumir(TokenKind::Igual)?;
+        let operador =
+            match self.atual().kind {
+                TokenKind::Igual =>
+                    OperadorAtribuicao::Igual,
 
-        let valor = self.expressao()?;
+                TokenKind::MaisIgual =>
+                    OperadorAtribuicao::Mais,
 
-        Ok(Instrucao::Atribuir {
-            nome: nome.texto,
-            valor,
-            linha,
-        })
+                TokenKind::MenosIgual =>
+                    OperadorAtribuicao::Menos,
+
+                TokenKind::MultiplicaIgual =>
+                    OperadorAtribuicao::Multiplica,
+
+                TokenKind::DivideIgual =>
+                    OperadorAtribuicao::Divide,
+
+                TokenKind::ModuloIgual =>
+                    OperadorAtribuicao::Modulo,
+
+                _ => {
+                    return Err(
+                        NeoErro::Sintaxe {
+                            linha,
+                            mensagem:
+                                "Esperado '=' ou operador de atribuição."
+                                    .into(),
+                        }
+                    );
+                }
+            };
+
+        self.avancar();
+
+        let valor =
+            self.expressao()?;
+
+        Ok(
+            Instrucao::Atribuir {
+                nome: nome.texto,
+                operador,
+                valor,
+                linha,
+            }
+        )
     }
 
     fn display(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let linha = self.atual().linha;
+        let linha =
+            self.atual().linha;
 
-        self.consumir(TokenKind::Display)?;
+        self.consumir(
+            TokenKind::Display
+        )?;
 
-        let valor = self.expressao()?;
+        let valor =
+            self.expressao()?;
 
-        Ok(Instrucao::Display {
-            valor,
-            linha,
-        })
+        Ok(
+            Instrucao::Display {
+                valor,
+                linha,
+            }
+        )
     }
 
     fn if_instrucao(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let linha = self.atual().linha;
+        let linha =
+            self.atual().linha;
 
-        self.consumir(TokenKind::If)?;
+        self.consumir(
+            TokenKind::If
+        )?;
 
-        let condicao = self.expressao()?;
+        let condicao =
+            self.expressao()?;
 
-        let mut verdadeiro = Vec::new();
+        let mut verdadeiro =
+            Vec::new();
 
-        while self.atual().kind != TokenKind::Else
-            && self.atual().kind != TokenKind::End
-            && self.atual().kind != TokenKind::Fim
+        while self.atual().kind
+            != TokenKind::Else
+            && self.atual().kind
+                != TokenKind::End
+            && self.atual().kind
+                != TokenKind::Fim
         {
-            verdadeiro.push(self.instrucao()?);
+            verdadeiro.push(
+                self.instrucao()?
+            );
         }
 
-        let mut falso = Vec::new();
+        let mut falso =
+            Vec::new();
 
-        if self.atual().kind == TokenKind::Else {
+        if self.atual().kind
+            == TokenKind::Else
+        {
             self.avancar();
 
-            while self.atual().kind != TokenKind::End
-                && self.atual().kind != TokenKind::Fim
+            while self.atual().kind
+                != TokenKind::End
+                && self.atual().kind
+                    != TokenKind::Fim
             {
-                falso.push(self.instrucao()?);
+                falso.push(
+                    self.instrucao()?
+                );
             }
         }
 
-        self.consumir(TokenKind::End)?;
+        self.consumir(
+            TokenKind::End
+        )?;
 
-        Ok(Instrucao::If {
-            condicao,
-            verdadeiro,
-            falso,
-            linha,
-        })
+        Ok(
+            Instrucao::If {
+                condicao,
+                verdadeiro,
+                falso,
+                linha,
+            }
+        )
     }
 
     fn while_instrucao(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let linha = self.atual().linha;
+        let linha =
+            self.atual().linha;
 
-        self.consumir(TokenKind::While)?;
+        self.consumir(
+            TokenKind::While
+        )?;
 
-        let condicao = self.expressao()?;
+        let condicao =
+            self.expressao()?;
 
-        let mut bloco = Vec::new();
+        let mut bloco =
+            Vec::new();
 
-        while self.atual().kind != TokenKind::End
-            && self.atual().kind != TokenKind::Fim
+        while self.atual().kind
+            != TokenKind::End
+            && self.atual().kind
+                != TokenKind::Fim
         {
-            bloco.push(self.instrucao()?);
+            bloco.push(
+                self.instrucao()?
+            );
         }
 
-        self.consumir(TokenKind::End)?;
+        self.consumir(
+            TokenKind::End
+        )?;
 
-        Ok(Instrucao::While {
-            condicao,
-            bloco,
-            linha,
-        })
+        Ok(
+            Instrucao::While {
+                condicao,
+                bloco,
+                linha,
+            }
+        )
     }
 
     fn funcao(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let linha = self.atual().linha;
+        let linha =
+            self.atual().linha;
 
-        self.consumir(TokenKind::Func)?;
+        self.consumir(
+            TokenKind::Func
+        )?;
 
         let nome =
-            self.consumir(TokenKind::Identificador)?;
+            self.consumir(
+                TokenKind::Identificador
+            )?;
 
-        self.consumir(TokenKind::AbrePar)?;
+        self.consumir(
+            TokenKind::AbrePar
+        )?;
 
-        let mut parametros = Vec::new();
+        let mut parametros =
+            Vec::new();
 
-        if self.atual().kind != TokenKind::FechaPar {
+        if self.atual().kind
+            != TokenKind::FechaPar
+        {
             loop {
                 let parametro =
                     self.consumir(
                         TokenKind::Identificador
                     )?;
 
-                parametros.push(parametro.texto);
+                parametros.push(
+                    parametro.texto
+                );
 
                 if self.atual().kind
                     == TokenKind::Virgula
@@ -898,44 +1190,62 @@ impl Parser {
             }
         }
 
-        self.consumir(TokenKind::FechaPar)?;
+        self.consumir(
+            TokenKind::FechaPar
+        )?;
 
-        let mut bloco = Vec::new();
+        let mut bloco =
+            Vec::new();
 
-        while self.atual().kind != TokenKind::End
-            && self.atual().kind != TokenKind::Fim
+        while self.atual().kind
+            != TokenKind::End
+            && self.atual().kind
+                != TokenKind::Fim
         {
-            bloco.push(self.instrucao()?);
+            bloco.push(
+                self.instrucao()?
+            );
         }
 
-        self.consumir(TokenKind::End)?;
+        self.consumir(
+            TokenKind::End
+        )?;
 
-        Ok(Instrucao::Funcao {
-            nome: nome.texto,
-            parametros,
-            bloco,
-            linha,
-        })
+        Ok(
+            Instrucao::Funcao {
+                nome: nome.texto,
+                parametros,
+                bloco,
+                linha,
+            }
+        )
     }
 
     fn retorno(
         &mut self,
     ) -> Result<Instrucao, NeoErro> {
-        let linha = self.atual().linha;
+        let linha =
+            self.atual().linha;
 
-        self.consumir(TokenKind::Return)?;
+        self.consumir(
+            TokenKind::Return
+        )?;
 
-        let valor = self.expressao()?;
+        let valor =
+            self.expressao()?;
 
-        Ok(Instrucao::Return {
-            valor,
-            linha,
-        })
+        Ok(
+            Instrucao::Return {
+                valor,
+                linha,
+            }
+        )
     }
 
-    // ------------------------------------------------------------
+
+    // ============================================================
     // EXPRESSÕES
-    // ------------------------------------------------------------
+    // ============================================================
 
     fn expressao(
         &mut self,
@@ -946,17 +1256,22 @@ impl Parser {
     fn or(
         &mut self,
     ) -> Result<Expressao, NeoErro> {
-        let mut esquerda = self.and()?;
+        let mut esquerda =
+            self.and()?;
 
-        while self.atual().kind == TokenKind::Or {
+        while self.atual().kind
+            == TokenKind::Or
+        {
             self.avancar();
 
-            let direita = self.and()?;
+            let direita =
+                self.and()?;
 
-            esquerda = Expressao::Or(
-                Box::new(esquerda),
-                Box::new(direita),
-            );
+            esquerda =
+                Expressao::Or(
+                    Box::new(esquerda),
+                    Box::new(direita),
+                );
         }
 
         Ok(esquerda)
@@ -968,16 +1283,19 @@ impl Parser {
         let mut esquerda =
             self.comparacao()?;
 
-        while self.atual().kind == TokenKind::And {
+        while self.atual().kind
+            == TokenKind::And
+        {
             self.avancar();
 
             let direita =
                 self.comparacao()?;
 
-            esquerda = Expressao::And(
-                Box::new(esquerda),
-                Box::new(direita),
-            );
+            esquerda =
+                Expressao::And(
+                    Box::new(esquerda),
+                    Box::new(direita),
+                );
         }
 
         Ok(esquerda)
@@ -986,59 +1304,82 @@ impl Parser {
     fn comparacao(
         &mut self,
     ) -> Result<Expressao, NeoErro> {
-        let mut esquerda = self.termo()?;
+        let mut esquerda =
+            self.termo()?;
 
         loop {
             let operacao =
                 match self.atual().kind {
-                    TokenKind::Maior => Some(0),
-                    TokenKind::Menor => Some(1),
-                    TokenKind::MaiorIgual => Some(2),
-                    TokenKind::MenorIgual => Some(3),
-                    TokenKind::IgualIgual => Some(4),
-                    TokenKind::Diferente => Some(5),
+                    TokenKind::Maior =>
+                        Some(0),
+
+                    TokenKind::Menor =>
+                        Some(1),
+
+                    TokenKind::MaiorIgual =>
+                        Some(2),
+
+                    TokenKind::MenorIgual =>
+                        Some(3),
+
+                    TokenKind::IgualIgual =>
+                        Some(4),
+
+                    TokenKind::Diferente =>
+                        Some(5),
+
                     _ => None,
                 };
 
-            let Some(op) = operacao else {
+            let Some(op) =
+                operacao
+            else {
                 break;
             };
 
             self.avancar();
 
-            let direita = self.termo()?;
+            let direita =
+                self.termo()?;
 
-            esquerda = match op {
-                0 => Expressao::Maior(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
+            esquerda =
+                match op {
+                    0 =>
+                        Expressao::Maior(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
 
-                1 => Expressao::Menor(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
+                    1 =>
+                        Expressao::Menor(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
 
-                2 => Expressao::MaiorIgual(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
+                    2 =>
+                        Expressao::MaiorIgual(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
 
-                3 => Expressao::MenorIgual(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
+                    3 =>
+                        Expressao::MenorIgual(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
 
-                4 => Expressao::Igual(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
+                    4 =>
+                        Expressao::Igual(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
 
-                _ => Expressao::Diferente(
-                    Box::new(esquerda),
-                    Box::new(direita),
-                ),
-            };
+                    _ =>
+                        Expressao::Diferente(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        ),
+                };
         }
 
         Ok(esquerda)
@@ -1047,7 +1388,8 @@ impl Parser {
     fn termo(
         &mut self,
     ) -> Result<Expressao, NeoErro> {
-        let mut esquerda = self.fator()?;
+        let mut esquerda =
+            self.fator()?;
 
         loop {
             match self.atual().kind {
@@ -1057,10 +1399,11 @@ impl Parser {
                     let direita =
                         self.fator()?;
 
-                    esquerda = Expressao::Soma(
-                        Box::new(esquerda),
-                        Box::new(direita),
-                    );
+                    esquerda =
+                        Expressao::Soma(
+                            Box::new(esquerda),
+                            Box::new(direita),
+                        );
                 }
 
                 TokenKind::Menos => {
@@ -1140,7 +1483,9 @@ impl Parser {
     fn unario(
         &mut self,
     ) -> Result<Expressao, NeoErro> {
-        if self.atual().kind == TokenKind::Not {
+        if self.atual().kind
+            == TokenKind::Not
+        {
             self.avancar();
 
             return Ok(
@@ -1152,7 +1497,9 @@ impl Parser {
             );
         }
 
-        if self.atual().kind == TokenKind::Menos {
+        if self.atual().kind
+            == TokenKind::Menos
+        {
             self.avancar();
 
             return Ok(
@@ -1170,7 +1517,8 @@ impl Parser {
     fn primario(
         &mut self,
     ) -> Result<Expressao, NeoErro> {
-        let token = self.atual().clone();
+        let token =
+            self.atual().clone();
 
         match token.kind {
             TokenKind::Numero => {
@@ -1190,7 +1538,9 @@ impl Parser {
                     })?;
 
                 Ok(
-                    Expressao::Decimal(valor)
+                    Expressao::Decimal(
+                        valor
+                    )
                 )
             }
 
@@ -1217,7 +1567,6 @@ impl Parser {
             TokenKind::Identificador => {
                 self.avancar();
 
-                // Chamada de função
                 if self.atual().kind
                     == TokenKind::AbrePar
                 {
@@ -1302,7 +1651,623 @@ struct Funcao {
 
 
 // ================================================================
-// 9. CONTEXTO DE EXECUÇÃO
+// 9. SÍMBOLOS SEMÂNTICOS
+// ================================================================
+
+#[derive(Clone)]
+struct Simbolo {
+    tipo: Tipo,
+}
+
+
+// ================================================================
+// 10. ANALISADOR SEMÂNTICO
+// ================================================================
+
+struct AnalisadorSemantico {
+    escopos: Vec<HashMap<String, Simbolo>>,
+    funcoes: HashMap<String, usize>,
+}
+
+impl AnalisadorSemantico {
+    fn novo() -> Self {
+        Self {
+            escopos: vec![
+                HashMap::new()
+            ],
+            funcoes: HashMap::new(),
+        }
+    }
+
+    fn analisar(
+        &mut self,
+        programa: &[Instrucao],
+    ) -> Result<(), NeoErro> {
+        // Primeiro registramos funções.
+        for instrucao in programa {
+            if let Instrucao::Funcao {
+                nome,
+                parametros,
+                linha,
+                ..
+            } = instrucao
+            {
+                if self.funcoes.contains_key(nome) {
+                    return Err(
+                        NeoErro::Semantico {
+                            linha: *linha,
+                            mensagem: format!(
+                                "A função '{}' já foi declarada.",
+                                nome
+                            ),
+                        }
+                    );
+                }
+
+                self.funcoes.insert(
+                    nome.clone(),
+                    parametros.len()
+                );
+            }
+        }
+
+        for instrucao in programa {
+            if matches!(
+                instrucao,
+                Instrucao::Funcao { .. }
+            ) {
+                continue;
+            }
+
+            self.instruacao(instrucao)?;
+        }
+
+        Ok(())
+    }
+
+    fn instruacao(
+        &mut self,
+        instrucao: &Instrucao,
+    ) -> Result<(), NeoErro> {
+        match instrucao {
+            Instrucao::Declarar {
+                tipo,
+                nome,
+                valor,
+                linha,
+            } => {
+                if self.escopos
+                    .last()
+                    .unwrap()
+                    .contains_key(nome)
+                {
+                    return Err(
+                        NeoErro::Semantico {
+                            linha: *linha,
+                            mensagem: format!(
+                                "A variável '{}' já foi declarada neste escopo.",
+                                nome
+                            ),
+                        }
+                    );
+                }
+
+                let tipo_valor =
+                    self.expressao(valor)?;
+
+                if tipo_valor != *tipo {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: *linha,
+                            esperado:
+                                tipo.nome().into(),
+                            recebido:
+                                tipo_valor
+                                    .nome()
+                                    .into(),
+                        }
+                    );
+                }
+
+                self.escopos
+                    .last_mut()
+                    .unwrap()
+                    .insert(
+                        nome.clone(),
+                        Simbolo {
+                            tipo: tipo.clone(),
+                        },
+                    );
+            }
+
+            Instrucao::Atribuir {
+                nome,
+                operador,
+                valor,
+                linha,
+            } => {
+                let tipo_variavel =
+                    self.buscar_variavel(
+                        nome
+                    )
+                    .ok_or_else(|| {
+                        NeoErro::Semantico {
+                            linha: *linha,
+                            mensagem: format!(
+                                "Variável '{}' não existe.",
+                                nome
+                            ),
+                        }
+                    })?;
+
+                let tipo_valor =
+                    self.expressao(valor)?;
+
+                match operador {
+                    OperadorAtribuicao::Igual => {
+                        if tipo_variavel
+                            != tipo_valor
+                        {
+                            return Err(
+                                NeoErro::Tipo {
+                                    linha: *linha,
+                                    esperado:
+                                        tipo_variavel
+                                            .nome()
+                                            .into(),
+                                    recebido:
+                                        tipo_valor
+                                            .nome()
+                                            .into(),
+                                }
+                            );
+                        }
+                    }
+
+                    OperadorAtribuicao::Mais
+                    | OperadorAtribuicao::Menos
+                    | OperadorAtribuicao::Multiplica
+                    | OperadorAtribuicao::Divide
+                    | OperadorAtribuicao::Modulo => {
+                        if tipo_variavel
+                            != Tipo::Decimal
+                            || tipo_valor
+                                != Tipo::Decimal
+                        {
+                            return Err(
+                                NeoErro::Tipo {
+                                    linha: *linha,
+                                    esperado:
+                                        "decimal".into(),
+                                    recebido:
+                                        format!(
+                                            "{} e {}",
+                                            tipo_variavel
+                                                .nome(),
+                                            tipo_valor
+                                                .nome()
+                                        ),
+                                }
+                            );
+                        }
+                    }
+                }
+            }
+
+            Instrucao::Display {
+                valor,
+                linha,
+            } => {
+                self.expressao(valor)
+                    .map_err(|erro| {
+                        match erro {
+                            NeoErro::Tipo {
+                                linha: _,
+                                esperado,
+                                recebido,
+                            } => {
+                                NeoErro::Tipo {
+                                    linha: *linha,
+                                    esperado,
+                                    recebido,
+                                }
+                            }
+
+                            outro => outro,
+                        }
+                    })?;
+            }
+
+            Instrucao::If {
+                condicao,
+                verdadeiro,
+                falso,
+                linha,
+            } => {
+                let tipo =
+                    self.expressao(condicao)?;
+
+                if tipo != Tipo::Boolean {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: *linha,
+                            esperado:
+                                "boolean".into(),
+                            recebido:
+                                tipo.nome().into(),
+                        }
+                    );
+                }
+
+                self.entrar_escopo();
+
+                for instrucao
+                    in verdadeiro
+                {
+                    self.instruacao(
+                        instrucao
+                    )?;
+                }
+
+                self.sair_escopo();
+
+                self.entrar_escopo();
+
+                for instrucao
+                    in falso
+                {
+                    self.instruacao(
+                        instrucao
+                    )?;
+                }
+
+                self.sair_escopo();
+            }
+
+            Instrucao::While {
+                condicao,
+                bloco,
+                linha,
+            } => {
+                let tipo =
+                    self.expressao(condicao)?;
+
+                if tipo != Tipo::Boolean {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: *linha,
+                            esperado:
+                                "boolean".into(),
+                            recebido:
+                                tipo.nome().into(),
+                        }
+                    );
+                }
+
+                self.entrar_escopo();
+
+                for instrucao
+                    in bloco
+                {
+                    self.instruacao(
+                        instrucao
+                    )?;
+                }
+
+                self.sair_escopo();
+            }
+
+            Instrucao::Funcao {
+                ..
+            } => {}
+
+            Instrucao::Return {
+                valor,
+                ..
+            } => {
+                self.expressao(valor)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn expressao(
+        &self,
+        expressao: &Expressao,
+    ) -> Result<Tipo, NeoErro> {
+        match expressao {
+            Expressao::Decimal(_) =>
+                Ok(Tipo::Decimal),
+
+            Expressao::String(_) =>
+                Ok(Tipo::String),
+
+            Expressao::Boolean(_) =>
+                Ok(Tipo::Boolean),
+
+            Expressao::Variavel(nome) => {
+                self.buscar_variavel(nome)
+                    .ok_or_else(|| {
+                        NeoErro::Semantico {
+                            linha: 0,
+                            mensagem: format!(
+                                "Variável '{}' não existe.",
+                                nome
+                            ),
+                        }
+                    })
+            }
+
+            Expressao::Negativo(valor) => {
+                let tipo =
+                    self.expressao(valor)?;
+
+                if tipo != Tipo::Decimal {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "decimal".into(),
+                            recebido:
+                                tipo.nome().into(),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Decimal)
+            }
+
+            Expressao::Soma(a, b) => {
+                let a =
+                    self.expressao(a)?;
+
+                let b =
+                    self.expressao(b)?;
+
+                match (&a, &b) {
+                    (
+                        Tipo::Decimal,
+                        Tipo::Decimal,
+                    ) |
+                    (
+                        Tipo::String,
+                        Tipo::String,
+                    ) => Ok(a),
+
+                    _ => Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "decimal + decimal ou string + string"
+                                    .into(),
+                            recebido:
+                                format!(
+                                    "{} + {}",
+                                    a.nome(),
+                                    b.nome()
+                                ),
+                        }
+                    ),
+                }
+            }
+
+            Expressao::Subtracao(a, b)
+            | Expressao::Multiplicacao(a, b)
+            | Expressao::Divisao(a, b)
+            | Expressao::Modulo(a, b) => {
+                let a =
+                    self.expressao(a)?;
+
+                let b =
+                    self.expressao(b)?;
+
+                if a != Tipo::Decimal
+                    || b != Tipo::Decimal
+                {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "decimal".into(),
+                            recebido:
+                                format!(
+                                    "{} e {}",
+                                    a.nome(),
+                                    b.nome()
+                                ),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Decimal)
+            }
+
+            Expressao::Maior(a, b)
+            | Expressao::Menor(a, b)
+            | Expressao::MaiorIgual(a, b)
+            | Expressao::MenorIgual(a, b) => {
+                let a =
+                    self.expressao(a)?;
+
+                let b =
+                    self.expressao(b)?;
+
+                if a != Tipo::Decimal
+                    || b != Tipo::Decimal
+                {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "dois valores decimal"
+                                    .into(),
+                            recebido:
+                                format!(
+                                    "{} e {}",
+                                    a.nome(),
+                                    b.nome()
+                                ),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Boolean)
+            }
+
+            Expressao::Igual(a, b)
+            | Expressao::Diferente(a, b) => {
+                let a =
+                    self.expressao(a)?;
+
+                let b =
+                    self.expressao(b)?;
+
+                if a != b {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                a.nome().into(),
+                            recebido:
+                                b.nome().into(),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Boolean)
+            }
+
+            Expressao::And(a, b)
+            | Expressao::Or(a, b) => {
+                let a =
+                    self.expressao(a)?;
+
+                let b =
+                    self.expressao(b)?;
+
+                if a != Tipo::Boolean
+                    || b != Tipo::Boolean
+                {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "boolean".into(),
+                            recebido:
+                                format!(
+                                    "{} e {}",
+                                    a.nome(),
+                                    b.nome()
+                                ),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Boolean)
+            }
+
+            Expressao::Not(a) => {
+                let tipo =
+                    self.expressao(a)?;
+
+                if tipo != Tipo::Boolean {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha: 0,
+                            esperado:
+                                "boolean".into(),
+                            recebido:
+                                tipo.nome().into(),
+                        }
+                    );
+                }
+
+                Ok(Tipo::Boolean)
+            }
+
+            Expressao::Chamada {
+                nome,
+                argumentos,
+            } => {
+                let esperado =
+                    self.funcoes.get(nome)
+                        .ok_or_else(|| {
+                            NeoErro::Semantico {
+                                linha: 0,
+                                mensagem: format!(
+                                    "Função '{}' não existe.",
+                                    nome
+                                ),
+                            }
+                        })?;
+
+                if argumentos.len()
+                    != *esperado
+                {
+                    return Err(
+                        NeoErro::Semantico {
+                            linha: 0,
+                            mensagem: format!(
+                                "Função '{}' espera {} argumento(s), mas recebeu {}.",
+                                nome,
+                                esperado,
+                                argumentos.len()
+                            ),
+                        }
+                    );
+                }
+
+                for argumento
+                    in argumentos
+                {
+                    self.expressao(
+                        argumento
+                    )?;
+                }
+
+                // Nesta versão funções
+                // ainda não possuem
+                // assinatura de retorno
+                // na AST.
+                Ok(Tipo::Vazio)
+            }
+        }
+    }
+
+    fn buscar_variavel(
+        &self,
+        nome: &str,
+    ) -> Option<Tipo> {
+        for escopo
+            in self.escopos.iter().rev()
+        {
+            if let Some(simbolo) =
+                escopo.get(nome)
+            {
+                return Some(
+                    simbolo.tipo.clone()
+                );
+            }
+        }
+
+        None
+    }
+
+    fn entrar_escopo(&mut self) {
+        self.escopos.push(
+            HashMap::new()
+        );
+    }
+
+    fn sair_escopo(&mut self) {
+        self.escopos.pop();
+    }
+}
+
+
+// ================================================================
+// 11. CONTEXTO DE EXECUÇÃO
 // ================================================================
 
 struct Runtime {
@@ -1324,7 +2289,7 @@ impl Runtime {
         &mut self,
         programa: &[Instrucao],
     ) -> Result<(), NeoErro> {
-        // Primeiro registramos todas as funções.
+        // Registrar funções.
         for instrucao in programa {
             if let Instrucao::Funcao {
                 nome,
@@ -1336,8 +2301,10 @@ impl Runtime {
                 self.funcoes.insert(
                     nome.clone(),
                     Funcao {
-                        parametros: parametros.clone(),
-                        bloco: bloco.clone(),
+                        parametros:
+                            parametros.clone(),
+                        bloco:
+                            bloco.clone(),
                     },
                 );
             }
@@ -1351,7 +2318,9 @@ impl Runtime {
                 continue;
             }
 
-            self.executar_instrucao(instrucao)?;
+            self.executar_instrucao(
+                instrucao
+            )?;
         }
 
         Ok(())
@@ -1361,13 +2330,23 @@ impl Runtime {
         &mut self,
         bloco: &[Instrucao],
     ) -> Result<Option<NeoValor>, NeoErro> {
+        self.variaveis.push(
+            HashMap::new()
+        );
+
         for instrucao in bloco {
             if let Some(valor) =
-                self.executar_instrucao(instrucao)?
+                self.executar_instrucao(
+                    instrucao
+                )?
             {
+                self.variaveis.pop();
+
                 return Ok(Some(valor));
             }
         }
+
+        self.variaveis.pop();
 
         Ok(None)
     }
@@ -1378,40 +2357,15 @@ impl Runtime {
     ) -> Result<Option<NeoValor>, NeoErro> {
         match instrucao {
             Instrucao::Declarar {
-                tipo,
                 nome,
                 valor,
-                linha,
+                ..
             } => {
-                if self.variaveis.last().unwrap().contains_key(nome) {
-                    return Err(
-                        NeoErro::Runtime {
-                            linha: *linha,
-                            mensagem: format!(
-                                "A variável '{}' já foi declarada neste escopo.",
-                                nome
-                            ),
-                        }
-                    );
-                }
-
                 let resultado =
-                    self.avaliar(valor, *linha)?;
-
-                if resultado.tipo() != *tipo {
-                    return Err(
-                        NeoErro::Tipo {
-                            linha: *linha,
-                            esperado:
-                                tipo.nome().into(),
-                            recebido:
-                                resultado
-                                    .tipo()
-                                    .nome()
-                                    .into(),
-                        }
-                    );
-                }
+                    self.avaliar(
+                        valor,
+                        0
+                    )?;
 
                 self.variaveis
                     .last_mut()
@@ -1424,55 +2378,51 @@ impl Runtime {
 
             Instrucao::Atribuir {
                 nome,
+                operador,
                 valor,
                 linha,
             } => {
                 let novo =
-                    self.avaliar(valor, *linha)?;
+                    self.avaliar(
+                        valor,
+                        *linha
+                    )?;
 
-                for escopo in
-                    self.variaveis.iter_mut().rev()
-                {
-                    if let Some(antigo) =
-                        escopo.get(nome)
-                    {
-                        if antigo.tipo()
-                            != novo.tipo()
-                        {
-                            return Err(
-                                NeoErro::Tipo {
-                                    linha: *linha,
-                                    esperado:
-                                        antigo
-                                            .tipo()
-                                            .nome()
-                                            .into(),
-                                    recebido:
-                                        novo
-                                            .tipo()
-                                            .nome()
-                                            .into(),
-                                }
-                            );
-                        }
+                let escopo_indice =
+                    self.encontrar_escopo(nome)
+                        .ok_or_else(|| {
+                            NeoErro::Runtime {
+                                linha: *linha,
+                                mensagem:
+                                    format!(
+                                        "Variável '{}' não existe.",
+                                        nome
+                                    ),
+                            }
+                        })?;
 
-                        escopo.insert(
-                            nome.clone(),
-                            novo,
-                        );
+                let antigo =
+                    self.variaveis[
+                        escopo_indice
+                    ]
+                    .get(nome)
+                    .cloned()
+                    .unwrap();
 
-                        return Ok(None);
-                    }
-                }
+                let resultado =
+                    self.aplicar_atribuicao(
+                        antigo,
+                        novo,
+                        operador,
+                        *linha
+                    )?;
 
-                return Err(
-                    NeoErro::Runtime {
-                        linha: *linha,
-                        mensagem: format!(
-                            "Variável '{}' não existe.",
-                            nome
-                        ),
-                    }
+                self.variaveis[
+                    escopo_indice
+                ]
+                .insert(
+                    nome.clone(),
+                    resultado,
                 );
             }
 
@@ -1486,12 +2436,12 @@ impl Runtime {
                         *linha
                     )?;
 
-                let texto =
+                println!(
+                    "{}",
                     self.interpolar(
                         &resultado.texto()
-                    );
-
-                println!("{}", texto);
+                    )
+                );
             }
 
             Instrucao::If {
@@ -1513,7 +2463,9 @@ impl Runtime {
                                 verdadeiro
                             )?
                         {
-                            return Ok(Some(valor));
+                            return Ok(Some(
+                                valor
+                            ));
                         }
                     }
 
@@ -1523,7 +2475,9 @@ impl Runtime {
                                 falso
                             )?
                         {
-                            return Ok(Some(valor));
+                            return Ok(Some(
+                                valor
+                            ));
                         }
                     }
 
@@ -1563,7 +2517,9 @@ impl Runtime {
                                     bloco
                                 )?
                             {
-                                return Ok(Some(valor));
+                                return Ok(Some(
+                                    valor
+                                ));
                             }
                         }
 
@@ -1589,9 +2545,9 @@ impl Runtime {
                 }
             }
 
-            Instrucao::Funcao { .. } => {
-                // Funções já foram registradas.
-            }
+            Instrucao::Funcao {
+                ..
+            } => {}
 
             Instrucao::Return {
                 valor,
@@ -1603,11 +2559,246 @@ impl Runtime {
                         *linha
                     )?;
 
-                return Ok(Some(resultado));
+                return Ok(Some(
+                    resultado
+                ));
             }
         }
 
         Ok(None)
+    }
+
+
+    // ============================================================
+    // ATRIBUIÇÕES COMPOSTAS
+    // ============================================================
+
+    fn aplicar_atribuicao(
+        &self,
+        antigo: NeoValor,
+        novo: NeoValor,
+        operador: &OperadorAtribuicao,
+        linha: usize,
+    ) -> Result<NeoValor, NeoErro> {
+        match operador {
+            OperadorAtribuicao::Igual => {
+                if antigo.tipo()
+                    != novo.tipo()
+                {
+                    return Err(
+                        NeoErro::Tipo {
+                            linha,
+                            esperado:
+                                antigo
+                                    .tipo()
+                                    .nome()
+                                    .into(),
+                            recebido:
+                                novo
+                                    .tipo()
+                                    .nome()
+                                    .into(),
+                        }
+                    );
+                }
+
+                Ok(novo)
+            }
+
+            OperadorAtribuicao::Mais => {
+                match (antigo, novo) {
+                    (
+                        NeoValor::Decimal(a),
+                        NeoValor::Decimal(b),
+                    ) =>
+                        Ok(
+                            NeoValor::Decimal(
+                                a + b
+                            )
+                        ),
+
+                    (
+                        NeoValor::String(a),
+                        NeoValor::String(b),
+                    ) =>
+                        Ok(
+                            NeoValor::String(
+                                format!(
+                                    "{}{}",
+                                    a,
+                                    b
+                                )
+                            )
+                        ),
+
+                    (a, b) =>
+                        Err(
+                            NeoErro::Tipo {
+                                linha,
+                                esperado:
+                                    "tipos iguais compatíveis com +="
+                                        .into(),
+                                recebido:
+                                    format!(
+                                        "{} e {}",
+                                        a.tipo()
+                                            .nome(),
+                                        b.tipo()
+                                            .nome()
+                                    ),
+                            }
+                        ),
+                }
+            }
+
+            OperadorAtribuicao::Menos =>
+                self.operacao_decimal_valores(
+                    antigo,
+                    novo,
+                    linha,
+                    |a, b| a - b,
+                ),
+
+            OperadorAtribuicao::Multiplica =>
+                self.operacao_decimal_valores(
+                    antigo,
+                    novo,
+                    linha,
+                    |a, b| a * b,
+                ),
+
+            OperadorAtribuicao::Divide => {
+                match (antigo, novo) {
+                    (
+                        NeoValor::Decimal(a),
+                        NeoValor::Decimal(b),
+                    ) => {
+                        if b.is_zero() {
+                            return Err(
+                                NeoErro::Runtime {
+                                    linha,
+                                    mensagem:
+                                        "Divisão por zero."
+                                            .into(),
+                                }
+                            );
+                        }
+
+                        Ok(
+                            NeoValor::Decimal(
+                                a / b
+                            )
+                        )
+                    }
+
+                    (a, b) =>
+                        Err(
+                            NeoErro::Tipo {
+                                linha,
+                                esperado:
+                                    "decimal /= decimal"
+                                        .into(),
+                                recebido:
+                                    format!(
+                                        "{} e {}",
+                                        a.tipo()
+                                            .nome(),
+                                        b.tipo()
+                                            .nome()
+                                    ),
+                            }
+                        ),
+                }
+            }
+
+            OperadorAtribuicao::Modulo => {
+                match (antigo, novo) {
+                    (
+                        NeoValor::Decimal(a),
+                        NeoValor::Decimal(b),
+                    ) => {
+                        if b.is_zero() {
+                            return Err(
+                                NeoErro::Runtime {
+                                    linha,
+                                    mensagem:
+                                        "Módulo por zero."
+                                            .into(),
+                                }
+                            );
+                        }
+
+                        Ok(
+                            NeoValor::Decimal(
+                                a % b
+                            )
+                        )
+                    }
+
+                    (a, b) =>
+                        Err(
+                            NeoErro::Tipo {
+                                linha,
+                                esperado:
+                                    "decimal %= decimal"
+                                        .into(),
+                                recebido:
+                                    format!(
+                                        "{} e {}",
+                                        a.tipo()
+                                            .nome(),
+                                        b.tipo()
+                                            .nome()
+                                    ),
+                            }
+                        ),
+                }
+            }
+        }
+    }
+
+    fn operacao_decimal_valores<F>(
+        &self,
+        a: NeoValor,
+        b: NeoValor,
+        linha: usize,
+        operacao: F,
+    ) -> Result<NeoValor, NeoErro>
+    where
+        F: Fn(
+            Decimal,
+            Decimal
+        ) -> Decimal,
+    {
+        match (a, b) {
+            (
+                NeoValor::Decimal(a),
+                NeoValor::Decimal(b),
+            ) =>
+                Ok(
+                    NeoValor::Decimal(
+                        operacao(a, b)
+                    )
+                ),
+
+            (a, b) =>
+                Err(
+                    NeoErro::Tipo {
+                        linha,
+                        esperado:
+                            "decimal e decimal"
+                                .into(),
+                        recebido:
+                            format!(
+                                "{} e {}",
+                                a.tipo()
+                                    .nome(),
+                                b.tipo()
+                                    .nome()
+                            ),
+                    }
+                ),
+        }
     }
 
 
@@ -1623,7 +2814,9 @@ impl Runtime {
         match expressao {
             Expressao::Decimal(v) =>
                 Ok(
-                    NeoValor::Decimal(*v)
+                    NeoValor::Decimal(
+                        *v
+                    )
                 ),
 
             Expressao::String(v) =>
@@ -1635,39 +2828,41 @@ impl Runtime {
 
             Expressao::Boolean(v) =>
                 Ok(
-                    NeoValor::Boolean(*v)
+                    NeoValor::Boolean(
+                        *v
+                    )
                 ),
 
             Expressao::Variavel(nome) => {
-                for escopo in
-                    self.variaveis.iter().rev()
+                for escopo
+                    in self.variaveis.iter().rev()
                 {
                     if let Some(valor) =
                         escopo.get(nome)
                     {
-                        return Ok(valor.clone());
+                        return Ok(
+                            valor.clone()
+                        );
                     }
                 }
 
                 Err(
                     NeoErro::Runtime {
                         linha,
-                        mensagem: format!(
-                            "Variável '{}' não existe.",
-                            nome
-                        ),
+                        mensagem:
+                            format!(
+                                "Variável '{}' não existe.",
+                                nome
+                            ),
                     }
                 )
             }
 
             Expressao::Negativo(valor) => {
-                let resultado =
-                    self.avaliar(
-                        valor,
-                        linha
-                    )?;
-
-                match resultado {
+                match self.avaliar(
+                    valor,
+                    linha
+                )? {
                     NeoValor::Decimal(v) =>
                         Ok(
                             NeoValor::Decimal(
@@ -1701,7 +2896,7 @@ impl Runtime {
                 match (a, b) {
                     (
                         NeoValor::Decimal(a),
-                        NeoValor::Decimal(b)
+                        NeoValor::Decimal(b),
                     ) =>
                         Ok(
                             NeoValor::Decimal(
@@ -1711,7 +2906,7 @@ impl Runtime {
 
                     (
                         NeoValor::String(a),
-                        NeoValor::String(b)
+                        NeoValor::String(b),
                     ) =>
                         Ok(
                             NeoValor::String(
@@ -1749,7 +2944,7 @@ impl Runtime {
                     b,
                     linha,
                     |x, y| x - y,
-                    "decimal - decimal"
+                    "decimal - decimal",
                 ),
 
             Expressao::Multiplicacao(a, b) =>
@@ -1758,7 +2953,7 @@ impl Runtime {
                     b,
                     linha,
                     |x, y| x * y,
-                    "decimal * decimal"
+                    "decimal * decimal",
                 ),
 
             Expressao::Divisao(a, b) => {
@@ -1771,7 +2966,7 @@ impl Runtime {
                 match (a, b) {
                     (
                         NeoValor::Decimal(a),
-                        NeoValor::Decimal(b)
+                        NeoValor::Decimal(b),
                     ) => {
                         if b.is_zero() {
                             return Err(
@@ -1821,7 +3016,7 @@ impl Runtime {
                 match (a, b) {
                     (
                         NeoValor::Decimal(a),
-                        NeoValor::Decimal(b)
+                        NeoValor::Decimal(b),
                     ) => {
                         if b.is_zero() {
                             return Err(
@@ -1866,7 +3061,7 @@ impl Runtime {
                     a,
                     b,
                     linha,
-                    |x, y| x > y
+                    |x, y| x > y,
                 ),
 
             Expressao::Menor(a, b) =>
@@ -1874,7 +3069,7 @@ impl Runtime {
                     a,
                     b,
                     linha,
-                    |x, y| x < y
+                    |x, y| x < y,
                 ),
 
             Expressao::MaiorIgual(a, b) =>
@@ -1882,7 +3077,7 @@ impl Runtime {
                     a,
                     b,
                     linha,
-                    |x, y| x >= y
+                    |x, y| x >= y,
                 ),
 
             Expressao::MenorIgual(a, b) =>
@@ -1890,7 +3085,7 @@ impl Runtime {
                     a,
                     b,
                     linha,
-                    |x, y| x <= y
+                    |x, y| x <= y,
                 ),
 
             Expressao::Igual(a, b) => {
@@ -1921,14 +3116,26 @@ impl Runtime {
                 )
             }
 
+            // ----------------------------------------------------
+            // AND com curto-circuito
+            // ----------------------------------------------------
+
             Expressao::And(a, b) => {
-                let a =
+                let esquerda =
                     self.obter_booleano(
                         a,
                         linha
                     )?;
 
-                let b =
+                if !esquerda {
+                    return Ok(
+                        NeoValor::Boolean(
+                            false
+                        )
+                    );
+                }
+
+                let direita =
                     self.obter_booleano(
                         b,
                         linha
@@ -1936,19 +3143,31 @@ impl Runtime {
 
                 Ok(
                     NeoValor::Boolean(
-                        a && b
+                        esquerda && direita
                     )
                 )
             }
 
+            // ----------------------------------------------------
+            // OR com curto-circuito
+            // ----------------------------------------------------
+
             Expressao::Or(a, b) => {
-                let a =
+                let esquerda =
                     self.obter_booleano(
                         a,
                         linha
                     )?;
 
-                let b =
+                if esquerda {
+                    return Ok(
+                        NeoValor::Boolean(
+                            true
+                        )
+                    );
+                }
+
+                let direita =
                     self.obter_booleano(
                         b,
                         linha
@@ -1956,7 +3175,7 @@ impl Runtime {
 
                 Ok(
                     NeoValor::Boolean(
-                        a || b
+                        esquerda || direita
                     )
                 )
             }
@@ -1978,16 +3197,14 @@ impl Runtime {
             Expressao::Chamada {
                 nome,
                 argumentos,
-            } => {
+            } =>
                 self.chamar_funcao(
                     nome,
                     argumentos,
                     linha
-                )
-            }
+                ),
         }
     }
-
 
     fn operacao_decimal<F>(
         &mut self,
@@ -2012,7 +3229,7 @@ impl Runtime {
         match (a, b) {
             (
                 NeoValor::Decimal(a),
-                NeoValor::Decimal(b)
+                NeoValor::Decimal(b),
             ) =>
                 Ok(
                     NeoValor::Decimal(
@@ -2039,7 +3256,6 @@ impl Runtime {
         }
     }
 
-
     fn comparar<F>(
         &mut self,
         a: &Expressao,
@@ -2062,7 +3278,7 @@ impl Runtime {
         match (a, b) {
             (
                 NeoValor::Decimal(a),
-                NeoValor::Decimal(b)
+                NeoValor::Decimal(b),
             ) =>
                 Ok(
                     NeoValor::Boolean(
@@ -2089,7 +3305,6 @@ impl Runtime {
                 ),
         }
     }
-
 
     fn obter_booleano(
         &mut self,
@@ -2132,7 +3347,8 @@ impl Runtime {
     ) -> Result<NeoValor, NeoErro> {
         let funcao =
             match self.funcoes.get(nome) {
-                Some(f) => f.clone(),
+                Some(f) =>
+                    f.clone(),
 
                 None =>
                     return Err(
@@ -2190,7 +3406,7 @@ impl Runtime {
         );
 
         let resultado =
-            self.executar_bloco(
+            self.executar_bloco_funcao(
                 &funcao.bloco
             )?;
 
@@ -2201,6 +3417,48 @@ impl Runtime {
                 NeoValor::Vazio
             )
         )
+    }
+
+    fn executar_bloco_funcao(
+        &mut self,
+        bloco: &[Instrucao],
+    ) -> Result<Option<NeoValor>, NeoErro> {
+        for instrucao in bloco {
+            if let Some(valor) =
+                self.executar_instrucao(
+                    instrucao
+                )?
+            {
+                return Ok(Some(
+                    valor
+                ));
+            }
+        }
+
+        Ok(None)
+    }
+
+
+    // ============================================================
+    // ESCOPOS
+    // ============================================================
+
+    fn encontrar_escopo(
+        &self,
+        nome: &str,
+    ) -> Option<usize> {
+        for indice
+            in (0..self.variaveis.len())
+                .rev()
+        {
+            if self.variaveis[indice]
+                .contains_key(nome)
+            {
+                return Some(indice);
+            }
+        }
+
+        None
     }
 
 
@@ -2215,8 +3473,8 @@ impl Runtime {
         let mut resultado =
             texto.to_string();
 
-        for escopo in
-            self.variaveis.iter()
+        for escopo
+            in &self.variaveis
         {
             for (nome, valor)
                 in escopo
@@ -2241,7 +3499,7 @@ impl Runtime {
 
 
 // ================================================================
-// 10. EXECUÇÃO DO ARQUIVO
+// 12. EXECUÇÃO DO ARQUIVO
 // ================================================================
 
 fn executar_arquivo(
@@ -2264,7 +3522,7 @@ fn executar_arquivo(
         })?;
 
     println!(
-        "NeoCOBOL 0.4.0"
+        "NeoCOBOL 0.5.0"
     );
 
     println!(
@@ -2272,7 +3530,10 @@ fn executar_arquivo(
         caminho
     );
 
+    // ------------------------------------------------------------
     // Lexer
+    // ------------------------------------------------------------
+
     let tokens =
         lex(&codigo)?;
 
@@ -2281,7 +3542,10 @@ fn executar_arquivo(
         tokens.len()
     );
 
+    // ------------------------------------------------------------
     // Parser
+    // ------------------------------------------------------------
+
     let mut parser =
         Parser::novo(tokens);
 
@@ -2292,7 +3556,25 @@ fn executar_arquivo(
         "Parser: AST construída."
     );
 
+    // ------------------------------------------------------------
+    // Análise semântica
+    // ------------------------------------------------------------
+
+    let mut semantico =
+        AnalisadorSemantico::novo();
+
+    semantico.analisar(
+        &programa
+    )?;
+
+    println!(
+        "Semântica: programa válido."
+    );
+
+    // ------------------------------------------------------------
     // Runtime
+    // ------------------------------------------------------------
+
     let mut runtime =
         Runtime::novo();
 
@@ -2309,7 +3591,7 @@ fn executar_arquivo(
 
 
 // ================================================================
-// 11. MAIN
+// 13. MAIN
 // ================================================================
 
 fn main() {
@@ -2319,7 +3601,7 @@ fn main() {
 
     if argumentos.len() < 2 {
         println!(
-            "NeoCOBOL 0.4.0"
+            "NeoCOBOL 0.5.0"
         );
 
         println!(

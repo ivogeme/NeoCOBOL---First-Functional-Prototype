@@ -1,0 +1,23 @@
+decimal x = 10
+decimal y = 5
+
+x += y
+
+display "x = {x}"
+
+if x > 10
+    display "Maior que 10"
+else
+    display "Não é maior que 10"
+end
+
+while x < 20
+    x += 1
+    display "contador = {x}"
+end
+
+func dobro(valor)
+    return valor * 2
+end
+
+display dobro(10)

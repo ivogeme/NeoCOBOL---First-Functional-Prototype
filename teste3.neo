@@ -1,0 +1,23 @@
+decimal saldo = 2000.50
+decimal limite = 1000
+
+display "Saldo: {saldo}"
+
+if saldo > limite
+    display "Saldo acima do limite."
+else
+    display "Saldo abaixo do limite."
+end
+
+decimal contador = 1
+
+while contador <= 5
+    display "Contador: {contador}"
+    contador = contador + 1
+end
+
+func dobro(valor)
+    return valor + valor
+end
+
+display "Dobro: {dobro(10)}"
